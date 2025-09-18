@@ -1,322 +1,117 @@
 import React, { useState, useEffect } from 'react';
-import { createClient } from '@supabase/supabase-js';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './components/ui/card';
 import { Button } from './components/ui/button';
 import { Input } from './components/ui/input';
 import { Label } from './components/ui/label';
-import { Textarea } from './components/ui/textarea';
 import { Badge } from './components/ui/badge';
-import { Avatar, AvatarFallback, AvatarImage } from './components/ui/avatar';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from './components/ui/dialog';
-import { Alert, AlertDescription } from './components/ui/alert';
-import { Separator } from './components/ui/separator';
-import { Calendar, Users, FileText, Vote, Bell, Mic, Settings, Plus, Upload, LogOut } from 'lucide-react';
-import { toast } from 'sonner@2.0.3';
+import { Avatar, AvatarFallback } from './components/ui/avatar';
+import { 
+  Calendar, Users, FileText, LogOut, BookOpen, 
+  Bell, CalendarDays, Menu, X, ChevronRight
+} from 'lucide-react';
+import { toast } from 'sonner';
 import { Toaster } from './components/ui/sonner';
-import { LoginForm } from './components/auth/LoginForm';
-import { RegisterForm } from './components/auth/RegisterForm';
-import { MeetingsSection } from './components/meetings/MeetingsSection';
-import { FilesSection } from './components/files/FilesSection';
-import { CalendarSection } from './components/calendar/CalendarSection';
-import { LibrarySection } from './components/library/LibrarySection';
-import { AnnouncementsSection } from './components/announcements/AnnouncementsSection';
-import { TranscriptionSection } from './components/transcription/TranscriptionSection';
-import { VotingSection } from './components/voting/VotingSection';
-import { UserProfile } from './components/profile/UserProfile';
-import { DebugInfo } from './components/debug/DebugInfo';
-import { projectId, publicAnonKey } from './utils/supabase/info';
-
-const supabase = createClient(
-  `https://${projectId}.supabase.co`,
-  publicAnonKey
-);
-
-interface User {
-  id: string;
-  email: string;
-  name: string;
-  role: string;
-}
+import { authAPI, type User } from './utils/auth';
+import { 
+  healthAPI, meetingAPI, committeeAPI, voteAPI
+} from './utils/api-extended';
+import type { Meeting, Committee } from './utils/api-extended';
+import MeetingDetailView from './components/meetings/MeetingDetailView';
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
-  const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [activeTab, setActiveTab] = useState('meetings');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [loginForm, setLoginForm] = useState({ email: '', password: '' });
+  const [selectedMeeting, setSelectedMeeting] = useState<Meeting | null>(null);
+  
+  // Debug: Log sidebar state changes
+  useEffect(() => {
+    console.log('Sidebar state changed:', sidebarOpen);
+  }, [sidebarOpen]);
+  
+  // Data states (only for implemented features)
+  const [meetings, setMeetings] = useState<Meeting[]>([]);
+  const [committees, setCommittees] = useState<Committee[]>([]);
 
   useEffect(() => {
-    // Test backend connectivity first
-    testBackendConnection();
-    checkSession();
-    createDemoUsersIfNeeded();
+    checkAuth();
+    testAPI();
   }, []);
 
-  const createDemoUsersIfNeeded = async () => {
+  useEffect(() => {
+    if (user) {
+      loadData();
+    }
+  }, [user]);
+
+  // Handle escape key to close sidebar
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && sidebarOpen) {
+        setSidebarOpen(false);
+      }
+    };
+
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [sidebarOpen]);
+
+  const testAPI = async () => {
     try {
-      // Check if demo users already exist in localStorage flag
-      const demoUsersCreated = localStorage.getItem('demoUsersCreated');
-      if (demoUsersCreated) {
-        console.log('Demo users already created');
-        return;
-      }
-
-      console.log('Creating demo users...');
-      
-      const demoAccounts = [
-        { email: 'admin@demo.gr', password: 'admin123', name: 'Διαχειριστής Συστήματος', role: 'admin' },
-        { email: 'member@demo.gr', password: 'member123', name: 'Μέλος Συμβουλίου', role: 'member' },
-        { email: 'secretary@demo.gr', password: 'secretary123', name: 'Γραμματέας ΔΣ', role: 'secretary' }
-      ];
-
-      let successCount = 0;
-
-      for (const account of demoAccounts) {
-        try {
-          const { data, error } = await supabase.auth.signUp({
-            email: account.email,
-            password: account.password,
-            options: {
-              data: {
-                name: account.name,
-                role: account.role
-              }
-            }
-          });
-
-          if (!error && data.user) {
-            console.log(`✅ Demo user created: ${account.email}`);
-            successCount++;
-          } else {
-            console.log(`⚠️  Demo user may already exist: ${account.email}`, error?.message);
-          }
-        } catch (userError) {
-          console.log(`❌ Failed to create demo user ${account.email}:`, userError);
-        }
-      }
-
-      if (successCount > 0) {
-        console.log(`Created ${successCount} demo users`);
-      }
-      
-      // Mark as completed
-      localStorage.setItem('demoUsersCreated', 'true');
+      const health = await healthAPI.check();
+      console.log('API Health:', health);
     } catch (error) {
-      console.error('Demo users creation failed:', error);
+      console.error('API Health check failed:', error);
     }
   };
 
-  const testBackendConnection = async () => {
+  const checkAuth = () => {
+    const authData = authAPI.getCurrentUser();
+    if (authData) {
+      setUser(authData.user);
+    }
+    setLoading(false);
+  };
+
+  const loadData = async () => {
     try {
-      console.log('Testing backend connection...');
-      console.log('Project ID:', projectId);
-      console.log('Supabase URL:', `https://${projectId}.supabase.co`);
+      const [meetingsData, committeesData] = await Promise.all([
+        meetingAPI.getAll(),
+        committeeAPI.getAll()
+      ]);
       
-      // First test the Supabase connection directly
-      const { data: testData, error: testError } = await supabase.auth.getSession();
-      console.log('Supabase client test:', { hasData: !!testData, error: testError?.message });
-      
-      // Then test the edge function
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-07da4527/health`);
-      console.log('Backend health check:', response.status, response.statusText);
-      
-      if (response.ok) {
-        const data = await response.json();
-        console.log('Backend is healthy:', data);
-      } else {
-        const errorText = await response.text();
-        console.error('Backend health check failed:', response.status, errorText);
-      }
+      setMeetings(meetingsData as Meeting[]);
+      setCommittees(committeesData as Committee[]);
     } catch (error) {
-      console.error('Backend connection test failed:', error);
+      console.error('Error loading data:', error);
+      toast.error('Σφάλμα φόρτωσης δεδομένων');
     }
   };
 
-  const checkSession = async () => {
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
     try {
-      console.log('Checking for existing session...');
-      const { data: { session }, error } = await supabase.auth.getSession();
-      
-      console.log('Session check result:', { session: session ? 'exists' : 'none', error });
-      
-      if (session?.access_token) {
-        console.log('Found existing session, fetching profile...');
-        await fetchUserProfile(session.access_token);
-      } else {
-        console.log('No existing session found');
-      }
-    } catch (error) {
-      console.error('Session check error:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchUserProfile = async (accessToken: string) => {
-    try {
-      console.log('Fetching user profile with token:', accessToken?.substring(0, 20) + '...');
-      
-      // Try backend first
-      try {
-        const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-07da4527/profile`, {
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'Content-Type': 'application/json'
-          }
-        });
-
-        console.log('Profile response status:', response.status);
-
-        if (response.ok) {
-          const profileData = await response.json();
-          console.log('Profile data received from backend:', profileData);
-          
-          setProfile(profileData);
-          setUser({
-            id: profileData.id,
-            email: profileData.email,
-            name: profileData.name,
-            role: profileData.role
-          });
-          return;
-        }
-      } catch (backendError) {
-        console.log('Backend profile fetch failed, using frontend fallback:', backendError);
-      }
-
-      // Fallback to frontend-only profile creation
-      console.log('Using frontend fallback for profile');
-      const { data: { user }, error } = await supabase.auth.getUser(accessToken);
-      
-      if (error || !user) {
-        console.error('Frontend user fetch error:', error);
-        toast.error('Σφάλμα φόρτωσης χρήστη');
-        return;
-      }
-
-      // Create profile from user metadata
-      const profileData = {
-        id: user.id,
-        email: user.email || '',
-        name: user.user_metadata?.name || user.email || 'Unknown User',
-        role: user.user_metadata?.role || 'member',
-        createdAt: user.created_at || new Date().toISOString(),
-        groups: []
-      };
-
-      console.log('Frontend profile created:', profileData);
-      
-      setProfile(profileData);
-      setUser({
-        id: profileData.id,
-        email: profileData.email,
-        name: profileData.name,
-        role: profileData.role
-      });
-    } catch (error) {
-      console.error('Profile fetch error:', error);
-      toast.error('Σφάλμα φόρτωσης προφίλ: ' + (error as Error).message);
-    }
-  };
-
-  const handleLogin = async (email: string, password: string) => {
-    try {
-      console.log('Attempting login with email:', email);
-      
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-      
-      console.log('Login response:', { data, error });
-      
-      if (error) {
-        console.error('Supabase auth error:', error);
-        toast.error('Σφάλμα σύνδεσης: ' + error.message);
-        return false;
-      }
-
-      if (data.session?.access_token) {
-        console.log('Session created, fetching profile...');
-        await fetchUserProfile(data.session.access_token);
+      const result = await authAPI.login(loginForm.email, loginForm.password);
+      if (result) {
+        setUser(result.user);
         toast.success('Επιτυχής σύνδεση!');
-        return true;
       } else {
-        console.error('No session or access token in response');
-        toast.error('Δεν ήταν δυνατή η δημιουργία συνεδρίας');
-        return false;
+        toast.error('Λάθος στοιχεία σύνδεσης');
       }
-      
     } catch (error) {
-      console.error('Login error:', error);
-      toast.error('Σφάλμα σύνδεσης: ' + (error as Error).message);
-      return false;
-    }
-  };
-
-  const handleRegister = async (email: string, password: string, name: string, role: string = 'member') => {
-    try {
-      // Try backend first, fallback to frontend-only
-      try {
-        const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-07da4527/register`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ email, password, name, role })
-        });
-
-        if (response.ok) {
-          toast.success('Επιτυχής εγγραφή! Μπορείτε να συνδεθείτε.');
-          setAuthMode('login');
-          return true;
-        }
-      } catch (backendError) {
-        console.log('Backend registration failed, trying frontend signup:', backendError);
-      }
-
-      // Fallback to frontend-only registration
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            name,
-            role
-          }
-        }
-      });
-
-      if (error) {
-        console.error('Frontend signup error:', error);
-        toast.error('Σφάλμα εγγραφής: ' + error.message);
-        return false;
-      }
-
-      toast.success('Επιτυχής εγγραφή! Μπορείτε να συνδεθείτε.');
-      setAuthMode('login');
-      return true;
-    } catch (error) {
-      console.error('Register error:', error);
-      toast.error('Σφάλμα εγγραφής');
-      return false;
+      toast.error('Σφάλμα σύνδεσης');
     }
   };
 
   const handleLogout = async () => {
-    try {
-      await supabase.auth.signOut();
-      setUser(null);
-      setProfile(null);
-      toast.success('Αποσύνδεση επιτυχής');
-    } catch (error) {
-      console.error('Logout error:', error);
-      toast.error('Σφάλμα αποσύνδεσης');
-    }
-  };
-
-  const getAccessToken = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    return session?.access_token;
+    await authAPI.logout();
+    setUser(null);
+    setMeetings([]);
+    setCommittees([]);
+    toast.success('Αποσύνδεση επιτυχής');
   };
 
   if (loading) {
@@ -341,25 +136,44 @@ export default function App() {
                 Σύστημα Διαχείρισης Συνεδριάσεων
               </CardTitle>
               <CardDescription>
-                Πλατφόρμα διαχείρισης συλλογικών οργάνων και διαβούλευσης
+                Πλατφόρμα διαχείρισης συλλογικών οργάνων (FastAPI Backend)
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <Tabs value={authMode} onValueChange={(value) => setAuthMode(value as 'login' | 'register')}>
-                <TabsList className="grid w-full grid-cols-2">
-                  <TabsTrigger value="login">Σύνδεση</TabsTrigger>
-                  <TabsTrigger value="register">Εγγραφή</TabsTrigger>
-                </TabsList>
-                <TabsContent value="login">
-                  <LoginForm onLogin={handleLogin} />
-                </TabsContent>
-                <TabsContent value="register">
-                  <RegisterForm onRegister={handleRegister} />
-                </TabsContent>
-              </Tabs>
+              <form onSubmit={handleLogin} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="email">Email</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    value={loginForm.email}
+                    onChange={(e) => setLoginForm({ ...loginForm, email: e.target.value })}
+                    placeholder="admin@demo.gr"
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="password">Κωδικός</Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    value={loginForm.password}
+                    onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
+                    placeholder="admin123"
+                    required
+                  />
+                </div>
+                <Button type="submit" className="w-full">
+                  Σύνδεση
+                </Button>
+              </form>
+              <div className="mt-4 text-sm text-gray-600">
+                <p>Demo Accounts:</p>
+                <p>admin@demo.gr / admin123</p>
+                <p>member@demo.gr / member123</p>
+              </div>
             </CardContent>
           </Card>
-          <DebugInfo />
         </div>
       </div>
     );
@@ -369,103 +183,383 @@ export default function App() {
     <>
       <Toaster />
       <div className="min-h-screen bg-gray-50">
-        {/* Header */}
-      <header className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center py-4">
-            <div className="flex items-center gap-3">
-              <Users className="h-8 w-8 text-blue-600" />
-              <div>
-                <h1 className="text-xl font-semibold text-gray-900">
-                  Σύστημα Διαχείρισης Συνεδριάσεων
-                </h1>
-                <p className="text-sm text-gray-500">Δημοτικό Συμβούλιο & Επιτροπές</p>
+
+        {/* Main Content */}
+        <div className="flex min-h-screen bg-gray-50">
+          {/* Sidebar */}
+          <div className={`w-64 bg-white shadow-lg transition-transform duration-300 ease-in-out ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 md:relative md:shadow-md`}>
+            <div className="flex flex-col h-full">
+              {/* Sidebar Header */}
+              <div className="flex items-center justify-between p-4 border-b md:justify-center">
+                <h2 className="text-lg font-semibold text-gray-800 md:hidden">Μενού</h2>
+                <div className="hidden md:flex items-center gap-2">
+                  <Users className="h-6 w-6 text-blue-600" />
+                  <span className="font-semibold text-gray-800">Σύστημα Διαχείρισης</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    console.log('X button clicked!'); // Debug log
+                    setSidebarOpen(false);
+                  }}
+                  className="md:hidden p-2 rounded-md hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+                  aria-label="Κλείσιμο μενού"
+                >
+                  <X className="h-4 w-4 text-gray-600" />
+                </button>
+              </div>
+
+              {/* Navigation Menu */}
+              <nav className="flex-1 p-4">
+                <div className="space-y-2">
+                  {[
+                    { id: 'meetings', label: 'Συνεδριάσεις', icon: Calendar, description: 'Διαχείριση συνεδριάσεων' },
+                    { id: 'files', label: 'Αρχεία', icon: FileText, description: 'Διαχείριση εγγράφων' },
+                    { id: 'calendar', label: 'Ημερολόγιο', icon: CalendarDays, description: 'Προβολή ημερολογίου' },
+                    { id: 'library', label: 'Βιβλιοθήκη', icon: BookOpen, description: 'Νομοθεσία & εγγραφα' },
+                    { id: 'announcements', label: 'Ανακοινώσεις', icon: Bell, description: 'Σημαντικές ανακοινώσεις' }
+                  ].map((item) => {
+                    const Icon = item.icon;
+                    const isActive = activeTab === item.id;
+                    
+                    return (
+                      <button
+                        key={item.id}
+                        onClick={() => {
+                          setActiveTab(item.id);
+                          // Close sidebar on mobile after selection
+                          if (window.innerWidth < 768) {
+                            setSidebarOpen(false);
+                          }
+                        }}
+                        className={`w-full flex items-center gap-3 p-3 rounded-lg text-left transition-all duration-200 group ${
+                          isActive 
+                            ? 'bg-blue-50 text-blue-700 border border-blue-200 shadow-sm' 
+                            : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
+                        }`}
+                      >
+                        <Icon className={`h-5 w-5 flex-shrink-0 ${isActive ? 'text-blue-600' : 'text-gray-500 group-hover:text-gray-700'}`} />
+                        <div className="flex-1 min-w-0">
+                          <p className={`font-medium truncate ${isActive ? 'text-blue-800' : 'text-gray-900'}`}>
+                            {item.label}
+                          </p>
+                          <p className={`text-xs truncate ${isActive ? 'text-blue-600' : 'text-gray-500'}`}>
+                            {item.description}
+                          </p>
+                        </div>
+                        {isActive && (
+                          <ChevronRight className="h-4 w-4 text-blue-600 flex-shrink-0" />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </nav>
+
+              {/* User Info at Bottom */}
+              <div className="border-t p-4">
+                {/* Debug Panel - Remove after testing */}
+                <div className="mb-4 p-2 bg-gray-50 rounded text-xs">
+                  <div>Sidebar State: {sidebarOpen ? 'Open' : 'Closed'}</div>
+                  <div>Screen: {typeof window !== 'undefined' && window.innerWidth >= 768 ? 'Desktop (md+)' : 'Mobile (<md)'}</div>
+                  <button 
+                    onClick={() => {
+                      console.log('Manual close clicked!');
+                      setSidebarOpen(false);
+                    }}
+                    className="mt-1 px-2 py-1 bg-red-100 rounded text-xs md:hidden"
+                  >
+                    Force Close (Mobile Only)
+                  </button>
+                </div>
+                
+                <div className="flex items-center gap-3 mb-3">
+                  <Avatar className="h-10 w-10">
+                    <AvatarFallback className="bg-blue-100 text-blue-700">
+                      {user.name.substring(0, 2).toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-gray-900 truncate">{user.name}</p>
+                    <Badge variant="secondary" className="text-xs">
+                      {user.role === 'admin' ? 'Διαχειριστής' : 
+                       user.role === 'secretary' ? 'Γραμματέας' : 'Μέλος'}
+                    </Badge>
+                  </div>
+                </div>
+                <Button variant="outline" size="sm" onClick={handleLogout} className="w-full">
+                  <LogOut className="h-4 w-4 mr-2" />
+                  Αποσύνδεση
+                </Button>
               </div>
             </div>
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2">
-                <Avatar className="h-8 w-8">
-                  <AvatarFallback>{user.name.substring(0, 2).toUpperCase()}</AvatarFallback>
-                </Avatar>
-                <div className="text-sm">
-                  <p className="font-medium">{user.name}</p>
-                  <Badge variant="secondary" className="text-xs">
-                    {user.role === 'admin' ? 'Διαχειριστής' : 
-                     user.role === 'secretary' ? 'Γραμματέας' : 'Μέλος'}
-                  </Badge>
+          </div>
+
+          {/* Overlay for mobile - only when sidebar is open */}
+          {sidebarOpen && (
+            <div 
+              className="fixed inset-0 bg-black bg-opacity-50 z-40 md:hidden"
+              onClick={(e: React.MouseEvent) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setSidebarOpen(false);
+              }}
+            />
+          )}
+
+          {/* Main Content Area */}
+          <div className="flex-1 flex flex-col min-w-0">
+            {/* Top Bar */}
+            <div className="bg-white border-b px-4 py-3 flex items-center justify-between lg:px-6">
+              <div className="flex items-center gap-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    console.log('Hamburger menu clicked!'); // Debug log
+                    setSidebarOpen(true);
+                  }}
+                  className="md:hidden p-2 rounded-md hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+                  aria-label="Άνοιγμα μενού"
+                >
+                  <Menu className="h-5 w-5 text-gray-600" />
+                </button>
+                <div>
+                  <h1 className="text-xl font-semibold text-gray-900">
+                    {activeTab === 'meetings' && 'Συνεδριάσεις'}
+                    {activeTab === 'files' && 'Αρχεία'}
+                    {activeTab === 'calendar' && 'Ημερολόγιο'}
+                    {activeTab === 'library' && 'Βιβλιοθήκη'}
+                    {activeTab === 'announcements' && 'Ανακοινώσεις'}
+                  </h1>
+                  <p className="text-sm text-gray-600">
+                    {activeTab === 'meetings' && 'Διαχείριση και προβολή συνεδριάσεων'}
+                    {activeTab === 'files' && 'Διαχείριση εγγράφων και αρχείων'}
+                    {activeTab === 'calendar' && 'Προβολή ημερολογίου εκδηλώσεων'}
+                    {activeTab === 'library' && 'Βιβλιοθήκη νομοθεσίας και εγγράφων'}
+                    {activeTab === 'announcements' && 'Ανακοινώσεις και ειδοποιήσεις'}
+                  </p>
                 </div>
               </div>
-              <Button variant="ghost" size="sm" onClick={handleLogout}>
-                <LogOut className="h-4 w-4" />
-              </Button>
+              <div className="hidden md:flex items-center gap-3">
+                <Badge variant="outline" className="text-xs">
+                  FastAPI Backend v2.0.0
+                </Badge>
+              </div>
+            </div>
+
+            {/* Content Area */}
+            <div className="flex-1 overflow-auto p-4 lg:p-6">
+              {/* Meetings Content - IMPLEMENTED */}
+              {activeTab === 'meetings' && (
+                selectedMeeting ? (
+                  <MeetingDetailView
+                    meeting={selectedMeeting}
+                    onBack={() => setSelectedMeeting(null)}
+                    onUpdateMeeting={(updatedMeeting) => {
+                      setMeetings(prev => prev.map(m => 
+                        m.id === updatedMeeting.id ? updatedMeeting : m
+                      ));
+                      setSelectedMeeting(updatedMeeting);
+                    }}
+                  />
+                ) : (
+                  <div className="grid gap-6 md:grid-cols-2">
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                          <Users className="h-5 w-5" />
+                          Επιτροπές ({committees.length})
+                        </CardTitle>
+                        <div className="flex gap-2">
+                          <Button
+                            onClick={async () => {
+                              try {
+                                const newCommittee = await committeeAPI.create({
+                                  name: "Νέα Επιτροπή",
+                                  description: "Δημιουργήθηκε από το interface"
+                                });
+                                toast.success("Νέα επιτροπή δημιουργήθηκε!");
+                                loadData();
+                              } catch (error) {
+                                toast.error("Σφάλμα δημιουργίας επιτροπής");
+                              }
+                            }}
+                            variant="outline"
+                            size="sm"
+                          >
+                            Δημιουργία Επιτροπής
+                          </Button>
+                        </div>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-2">
+                          {committees.map((committee) => (
+                            <div key={committee.id} className="p-3 border rounded-lg">
+                              <p className="font-medium">{committee.name}</p>
+                              <p className="text-sm text-gray-600">{committee.description}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                          <Calendar className="h-5 w-5" />
+                          Συνεδριάσεις ({meetings.length})
+                        </CardTitle>
+                        <div className="flex gap-2">
+                          <Button
+                            onClick={async () => {
+                              try {
+                                const newMeeting = await meetingAPI.create({
+                                  title: "Νέα Συνεδρίαση",
+                                  description: "Δημιουργήθηκε από το interface",
+                                  committee_id: committees[0]?.id || 1,
+                                  scheduled_at: new Date().toISOString()
+                                });
+                                toast.success("Νέα συνεδρίαση δημιουργήθηκε!");
+                                loadData();
+                              } catch (error) {
+                                toast.error("Σφάλμα δημιουργίας συνεδρίασης");
+                              }
+                            }}
+                            variant="outline"
+                            size="sm"
+                            disabled={committees.length === 0}
+                          >
+                            Δημιουργία Συνεδρίασης
+                          </Button>
+                        </div>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-2">
+                          {meetings.map((meeting) => (
+                            <div key={meeting.id} className="p-3 border rounded-lg">
+                              <div className="flex items-start justify-between">
+                                <div className="flex-1">
+                                  <p className="font-medium">{meeting.title}</p>
+                                  <p className="text-sm text-gray-600">{meeting.description}</p>
+                                  {meeting.scheduled_at && (
+                                    <p className="text-xs text-blue-600">
+                                      {new Date(meeting.scheduled_at).toLocaleString('el-GR')}
+                                    </p>
+                                  )}
+                                </div>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => setSelectedMeeting(meeting)}
+                                  className="ml-2"
+                                >
+                                  Προβολή
+                                </Button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+                )
+              )}
+
+              {/* Placeholder Content for Not Yet Implemented Features */}
+              {activeTab === 'files' && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <FileText className="h-5 w-5" />
+                      Διαχείριση Αρχείων
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-center py-8">
+                      <FileText className="h-16 w-16 mx-auto text-gray-400 mb-4" />
+                      <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                        Σύστημα Αρχείων
+                      </h3>
+                      <p className="text-gray-600 mb-4">
+                        Η λειτουργία διαχείρισης αρχείων θα είναι διαθέσιμη σύντομα.
+                      </p>
+                      <Badge variant="secondary">Σε Ανάπτυξη</Badge>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {activeTab === 'calendar' && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <CalendarDays className="h-5 w-5" />
+                      Ημερολόγιο Εκδηλώσεων
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-center py-8">
+                      <CalendarDays className="h-16 w-16 mx-auto text-gray-400 mb-4" />
+                      <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                        Ημερολόγιο
+                      </h3>
+                      <p className="text-gray-600 mb-4">
+                        Το οπτικό ημερολόγιο με drag-drop scheduling θα είναι διαθέσιμο σύντομα.
+                      </p>
+                      <Badge variant="secondary">Σε Ανάπτυξη</Badge>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {activeTab === 'library' && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <BookOpen className="h-5 w-5" />
+                      Βιβλιοθήκη Εγγράφων
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-center py-8">
+                      <BookOpen className="h-16 w-16 mx-auto text-gray-400 mb-4" />
+                      <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                        Βιβλιοθήκη
+                      </h3>
+                      <p className="text-gray-600 mb-4">
+                        Το σύστημα οργάνωσης νομοθεσίας και εγγράφων θα είναι διαθέσιμο σύντομα.
+                      </p>
+                      <Badge variant="secondary">Σε Ανάπτυξη</Badge>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {activeTab === 'announcements' && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Bell className="h-5 w-5" />
+                      Ανακοινώσεις
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-center py-8">
+                      <Bell className="h-16 w-16 mx-auto text-gray-400 mb-4" />
+                      <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                        Ανακοινώσεις
+                      </h3>
+                      <p className="text-gray-600 mb-4">
+                        Το σύστημα ανακοινώσεων με προτεραιότητες θα είναι διαθέσιμο σύντομα.
+                      </p>
+                      <Badge variant="secondary">Σε Ανάπτυξη</Badge>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
             </div>
           </div>
         </div>
-      </header>
-
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-6 lg:grid-cols-7 mb-8">
-            <TabsTrigger value="meetings" className="flex items-center gap-2">
-              <Calendar className="h-4 w-4" />
-              Συνεδριάσεις
-            </TabsTrigger>
-            <TabsTrigger value="files" className="flex items-center gap-2">
-              <FileText className="h-4 w-4" />
-              Αρχεία
-            </TabsTrigger>
-            <TabsTrigger value="calendar" className="flex items-center gap-2">
-              <Calendar className="h-4 w-4" />
-              Ημερολόγιο
-            </TabsTrigger>
-            <TabsTrigger value="library" className="flex items-center gap-2">
-              <FileText className="h-4 w-4" />
-              Βιβλιοθήκη
-            </TabsTrigger>
-            <TabsTrigger value="announcements" className="flex items-center gap-2">
-              <Bell className="h-4 w-4" />
-              Ανακοινώσεις
-            </TabsTrigger>
-            <TabsTrigger value="transcription" className="flex items-center gap-2">
-              <Mic className="h-4 w-4" />
-              Απομαγνητοφώνηση
-            </TabsTrigger>
-            <TabsTrigger value="voting" className="flex items-center gap-2 hidden lg:flex">
-              <Vote className="h-4 w-4" />
-              Ψηφοφορίες
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="meetings">
-            <MeetingsSection user={user} getAccessToken={getAccessToken} />
-          </TabsContent>
-
-          <TabsContent value="files">
-            <FilesSection user={user} getAccessToken={getAccessToken} />
-          </TabsContent>
-
-          <TabsContent value="calendar">
-            <CalendarSection user={user} getAccessToken={getAccessToken} />
-          </TabsContent>
-
-          <TabsContent value="library">
-            <LibrarySection user={user} getAccessToken={getAccessToken} />
-          </TabsContent>
-
-          <TabsContent value="announcements">
-            <AnnouncementsSection user={user} getAccessToken={getAccessToken} />
-          </TabsContent>
-
-          <TabsContent value="transcription">
-            <TranscriptionSection user={user} getAccessToken={getAccessToken} />
-          </TabsContent>
-
-          <TabsContent value="voting">
-            <VotingSection user={user} getAccessToken={getAccessToken} />
-          </TabsContent>
-        </Tabs>
-      </main>
       </div>
     </>
   );

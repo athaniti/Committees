@@ -8,8 +8,9 @@ import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Calendar, Clock, MapPin, Users, Plus, FileText, Video, Vote } from 'lucide-react';
-import { toast } from 'sonner@2.0.3';
-import { projectId } from '../../utils/supabase/info';
+import { toast } from 'sonner';
+import { meetingAPI, committeeAPI, type Meeting, type Committee } from '../../utils/api-extended';
+import MeetingDetailView from './MeetingDetailView';
 
 interface User {
   id: string;
@@ -18,7 +19,7 @@ interface User {
   role: string;
 }
 
-interface Meeting {
+interface MeetingLocal {
   id: string;
   title: string;
   description: string;
@@ -38,87 +39,101 @@ interface MeetingsSectionProps {
 }
 
 export function MeetingsSection({ user, getAccessToken }: MeetingsSectionProps) {
-  const [meetings, setMeetings] = useState<Meeting[]>([]);
+  const [meetings, setMeetings] = useState<MeetingLocal[]>([]);
+  const [committees, setCommittees] = useState<Committee[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [selectedMeeting, setSelectedMeeting] = useState<Meeting | null>(null);
   const [newMeeting, setNewMeeting] = useState({
     title: '',
     description: '',
     date: '',
     time: '',
     location: '',
-    type: 'council',
+    committee_id: 1,
     agenda: ''
   });
 
   useEffect(() => {
-    fetchMeetings();
-  }, []);
+    const loadData = async () => {
+      try {
+        setLoading(true);
+        const [meetingsData, committeesData] = await Promise.all([
+          meetingAPI.getAll(),
+          committeeAPI.getAll()
+        ]);
 
-  const fetchMeetings = async () => {
-    try {
-      const token = await getAccessToken();
-      if (!token) return;
+        // Convert API meetings to local format
+        const localMeetings: MeetingLocal[] = meetingsData.map((meeting: Meeting) => ({
+          id: meeting.id.toString(),
+          title: meeting.title,
+          description: meeting.description || '',
+          date: meeting.scheduled_at ? meeting.scheduled_at.split('T')[0] : '',
+          time: meeting.scheduled_at ? meeting.scheduled_at.split('T')[1]?.slice(0, 5) : '',
+          location: meeting.location || '',
+          type: 'council',
+          status: meeting.status || 'scheduled',
+          createdBy: meeting.created_by.toString(),
+          createdAt: meeting.created_at,
+          agenda: []
+        }));
 
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-07da4527/meetings`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setMeetings(data);
-      } else {
+        setMeetings(localMeetings);
+        setCommittees(committeesData);
+      } catch (error) {
+        console.error('Error loading meetings:', error);
         toast.error('Σφάλμα φόρτωσης συνεδριάσεων');
+      } finally {
+        setLoading(false);
       }
-    } catch (error) {
-      console.error('Error fetching meetings:', error);
-      toast.error('Σφάλμα φόρτωσης συνεδριάσεων');
-    } finally {
-      setLoading(false);
-    }
-  };
+    };
+
+    loadData();
+  }, []);
 
   const handleCreateMeeting = async (e: React.FormEvent) => {
     e.preventDefault();
     
     try {
-      const token = await getAccessToken();
-      if (!token) return;
-
       const meetingData = {
-        ...newMeeting,
-        agenda: newMeeting.agenda ? newMeeting.agenda.split('\n').filter(item => item.trim()) : []
+        title: newMeeting.title,
+        description: newMeeting.description,
+        scheduled_at: `${newMeeting.date}T${newMeeting.time}`,
+        committee_id: newMeeting.committee_id,
+        location: newMeeting.location,
+        status: 'scheduled'
       };
 
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-07da4527/meetings`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(meetingData)
-      });
+      const createdMeeting = await meetingAPI.create(meetingData);
+      
+      // Add to local state
+      const localMeeting: MeetingLocal = {
+        id: createdMeeting.id.toString(),
+        title: createdMeeting.title,
+        description: createdMeeting.description || '',
+        date: newMeeting.date,
+        time: newMeeting.time,
+        location: createdMeeting.location || '',
+        type: 'council',
+        status: createdMeeting.status || 'scheduled',
+        createdBy: createdMeeting.created_by.toString(),
+        createdAt: createdMeeting.created_at,
+        agenda: newMeeting.agenda ? newMeeting.agenda.split('\n').filter(line => line.trim()) : []
+      };
 
-      if (response.ok) {
-        toast.success('Η συνεδρίαση δημιουργήθηκε επιτυχώς');
-        setDialogOpen(false);
-        setNewMeeting({
-          title: '',
-          description: '',
-          date: '',
-          time: '',
-          location: '',
-          type: 'council',
-          agenda: ''
-        });
-        fetchMeetings();
-      } else {
-        const errorData = await response.json();
-        toast.error('Σφάλμα δημιουργίας συνεδρίασης: ' + errorData.error);
-      }
+      setMeetings(prev => [localMeeting, ...prev]);
+      setDialogOpen(false);
+      setNewMeeting({
+        title: '',
+        description: '',
+        date: '',
+        time: '',
+        location: '',
+        committee_id: 1,
+        agenda: ''
+      });
+      
+      toast.success('Η συνεδρίαση δημιουργήθηκε επιτυχώς');
     } catch (error) {
       console.error('Error creating meeting:', error);
       toast.error('Σφάλμα δημιουργίας συνεδρίασης');
@@ -126,47 +141,58 @@ export function MeetingsSection({ user, getAccessToken }: MeetingsSectionProps) 
   };
 
   const getMeetingTypeLabel = (type: string) => {
-    const types: Record<string, string> = {
-      council: 'Δημοτικό Συμβούλιο',
-      committee: 'Επιτροπή',
-      commission: 'Επιτροπή Διαβούλευσης',
-      event: 'Εκδήλωση'
-    };
-    return types[type] || type;
-  };
-
-  const getStatusColor = (status: string) => {
-    const colors: Record<string, string> = {
-      scheduled: 'bg-blue-100 text-blue-800',
-      ongoing: 'bg-green-100 text-green-800',
-      completed: 'bg-gray-100 text-gray-800',
-      cancelled: 'bg-red-100 text-red-800'
-    };
-    return colors[status] || 'bg-gray-100 text-gray-800';
+    switch (type) {
+      case 'council': return 'Δημοτικό Συμβούλιο';
+      case 'committee': return 'Επιτροπή';
+      case 'commission': return 'Επιτροπή Διαβούλευσης';
+      case 'event': return 'Εκδήλωση';
+      default: return type;
+    }
   };
 
   const getStatusLabel = (status: string) => {
-    const labels: Record<string, string> = {
-      scheduled: 'Προγραμματισμένη',
-      ongoing: 'Σε εξέλιξη',
-      completed: 'Ολοκληρωμένη',
-      cancelled: 'Ακυρωμένη'
-    };
-    return labels[status] || status;
+    switch (status) {
+      case 'scheduled': return 'Προγραμματισμένη';
+      case 'ongoing': return 'Σε εξέλιξη';
+      case 'completed': return 'Ολοκληρώθηκε';
+      case 'cancelled': return 'Ακυρώθηκε';
+      default: return status;
+    }
   };
 
-  if (loading) {
-    return <div className="text-center py-8">Φόρτωση συνεδριάσεων...</div>;
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'scheduled': return 'bg-blue-100 text-blue-800';
+      case 'ongoing': return 'bg-green-100 text-green-800';
+      case 'completed': return 'bg-gray-100 text-gray-800';
+      case 'cancelled': return 'bg-red-100 text-red-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  // Show detailed view if a meeting is selected
+  if (selectedMeeting !== null) {
+    return (
+      <MeetingDetailView
+        meeting={selectedMeeting}
+        onBack={() => setSelectedMeeting(null)}
+        onUpdateMeeting={(updatedMeeting) => {
+          setSelectedMeeting(updatedMeeting);
+          // TODO: Update the meetings list
+        }}
+      />
+    );
   }
 
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-2xl font-semibold">Συνεδριάσεις</h2>
-          <p className="text-gray-600">Διαχείριση προγραμματισμένων συνεδριάσεων και εκδηλώσεων</p>
+          <h2 className="text-2xl font-bold text-gray-900">Συνεδριάσεις</h2>
+          <p className="text-gray-600">Διαχείριση συνεδριάσεων και ημερήσιας διάταξης</p>
         </div>
-        {(user.role === 'admin' || user.role === 'secretary') && (
+        
+        {user.role === 'admin' && (
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
               <Button className="flex items-center gap-2">
@@ -174,25 +200,44 @@ export function MeetingsSection({ user, getAccessToken }: MeetingsSectionProps) 
                 Νέα Συνεδρίαση
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogContent className="max-w-2xl">
               <DialogHeader>
                 <DialogTitle>Δημιουργία Νέας Συνεδρίασης</DialogTitle>
               </DialogHeader>
               <form onSubmit={handleCreateMeeting} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="title">Τίτλος *</Label>
+                  <Input
+                    id="title"
+                    value={newMeeting.title}
+                    onChange={(e) => setNewMeeting({ ...newMeeting, title: e.target.value })}
+                    placeholder="π.χ. Τακτική Συνεδρίαση Δημοτικού Συμβουλίου"
+                    required
+                  />
+                </div>
+
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="title">Τίτλος</Label>
-                    <Input
-                      id="title"
-                      value={newMeeting.title}
-                      onChange={(e) => setNewMeeting({ ...newMeeting, title: e.target.value })}
-                      placeholder="π.χ. Τακτική Συνεδρίαση ΔΣ"
-                      required
-                    />
+                    <Label htmlFor="committee">Επιτροπή</Label>
+                    <Select 
+                      value={newMeeting.committee_id.toString()} 
+                      onValueChange={(value: string) => setNewMeeting({ ...newMeeting, committee_id: parseInt(value) })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Επιλέξτε επιτροπή" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {committees.map((committee) => (
+                          <SelectItem key={committee.id} value={committee.id.toString()}>
+                            {committee.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="type">Τύπος</Label>
-                    <Select value={newMeeting.type} onValueChange={(value) => setNewMeeting({ ...newMeeting, type: value })}>
+                    <Select value="council" onValueChange={() => {}}>
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
@@ -272,7 +317,13 @@ export function MeetingsSection({ user, getAccessToken }: MeetingsSectionProps) 
       </div>
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-        {meetings.length === 0 ? (
+        {loading ? (
+          <Card className="col-span-full">
+            <CardContent className="text-center py-8">
+              <p className="text-gray-500">Φόρτωση συνεδριάσεων...</p>
+            </CardContent>
+          </Card>
+        ) : meetings.length === 0 ? (
           <Card className="col-span-full">
             <CardContent className="text-center py-8">
               <Calendar className="h-12 w-12 text-gray-400 mx-auto mb-4" />
@@ -346,9 +397,28 @@ export function MeetingsSection({ user, getAccessToken }: MeetingsSectionProps) 
                 </div>
 
                 <div className="flex gap-2 mt-4">
-                  <Button variant="outline" size="sm" className="flex-1">
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="flex-1"
+                    onClick={() => {
+                      // Convert MeetingLocal to Meeting format for the detailed view
+                      const detailedMeeting: Meeting = {
+                        id: parseInt(meeting.id),
+                        committee_id: 1, // TODO: get from meeting
+                        title: meeting.title,
+                        description: meeting.description,
+                        scheduled_at: `${meeting.date}T${meeting.time}`,
+                        location: meeting.location,
+                        status: meeting.status as any,
+                        created_by: 1, // TODO: get actual user id
+                        created_at: meeting.createdAt
+                      };
+                      setSelectedMeeting(detailedMeeting);
+                    }}
+                  >
                     <FileText className="h-4 w-4 mr-1" />
-                    Αρχεία
+                    Αναλυτική Προβολή
                   </Button>
                   {meeting.status === 'ongoing' && (
                     <Button variant="outline" size="sm" className="flex-1">
