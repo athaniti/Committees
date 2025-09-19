@@ -9,7 +9,7 @@ import {
   FileText, Upload, Download, Trash2, Eye, Search, 
   FolderOpen, Grid, List, Filter, Plus, File,
   FileImage, FileVideo, Archive, UserIcon,
-  ImageIcon, Video, Music, Loader2
+  ImageIcon, Video, Music
 } from 'lucide-react';
 import { User } from '../../utils/auth';
 import { fileAPI, File as ApiFile } from '../../utils/api';
@@ -19,142 +19,140 @@ interface FilesSectionProps {
   getAccessToken?: () => Promise<string | undefined>;
 }
 
-// Use API File interface
-type FileRecord = ApiFile;
-
-// Categories for files
-const categories = [
-  { id: 'all', label: 'Όλες οι Κατηγορίες', icon: FolderOpen },
-  { id: 'meetings', label: 'Συνεδριάσεις', icon: FileText },
-  { id: 'documents', label: 'Έγγραφα', icon: FileText },
-  { id: 'reports', label: 'Αναφορές', icon: FileText },
-  { id: 'general', label: 'Γενικά', icon: File },
-  { id: 'images', label: 'Εικόνες', icon: FileImage },
-  { id: 'videos', label: 'Βίντεο', icon: FileVideo },
+// Mock data για αρχεία
+const mockFiles: FileRecord[] = [
+  {
+    id: 1,
+    fileName: "meeting_minutes_2025_09_15.pdf",
+    originalName: "Πρακτικά Συνεδρίασης 15-09-2025.pdf",
+    category: "meetings",
+    uploadedBy: "Γραμματεία",
+    uploadedAt: "2025-09-15T14:30:00Z",
+    size: 2485760, // 2.4 MB
+    type: "application/pdf",
+    description: "Πρακτικά της τακτικής συνεδρίασης του Διοικητικού Συμβουλίου",
+    tags: ["πρακτικά", "συνεδρίαση", "διοικητικό"],
+    downloadCount: 23,
+    isPublic: true
+  },
+  {
+    id: 2,
+    fileName: "annual_report_2024.docx",
+    originalName: "Ετήσια Έκθεση 2024.docx",
+    category: "reports",
+    uploadedBy: "Διεύθυνση",
+    uploadedAt: "2025-09-10T10:15:00Z",
+    size: 5242880, // 5 MB
+    type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    description: "Αναλυτική ετήσια έκθεση δραστηριοτήτων και οικονομικών στοιχείων",
+    tags: ["έκθεση", "ετήσια", "οικονομικά"],
+    downloadCount: 45,
+    isPublic: true
+  },
+  {
+    id: 3,
+    fileName: "budget_proposal_2026.xlsx",
+    originalName: "Πρόταση Προϋπολογισμού 2026.xlsx",
+    category: "documents",
+    uploadedBy: "Οικονομικό Τμήμα",
+    uploadedAt: "2025-09-08T16:45:00Z",
+    size: 1048576, // 1 MB
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    description: "Προτεινόμενος προϋπολογισμός για το έτος 2026",
+    tags: ["προϋπολογισμός", "2026", "οικονομικά"],
+    downloadCount: 12,
+    isPublic: false
+  },
+  {
+    id: 4,
+    fileName: "committee_photo_2025.jpg",
+    originalName: "Φωτογραφία Επιτροπής 2025.jpg",
+    category: "images",
+    uploadedBy: "Δημόσιες Σχέσεις",
+    uploadedAt: "2025-09-05T12:00:00Z",
+    size: 3145728, // 3 MB
+    type: "image/jpeg",
+    description: "Επίσημη φωτογραφία των μελών της επιτροπής",
+    tags: ["φωτογραφία", "επιτροπή", "μέλη"],
+    downloadCount: 8,
+    isPublic: true
+  },
+  {
+    id: 5,
+    fileName: "training_video_2025.mp4",
+    originalName: "Εκπαιδευτικό Βίντεο 2025.mp4",
+    category: "videos",
+    uploadedBy: "Εκπαίδευση",
+    uploadedAt: "2025-09-01T09:30:00Z",
+    size: 52428800, // 50 MB
+    type: "video/mp4",
+    description: "Εκπαιδευτικό βίντεο για νέα μέλη",
+    tags: ["εκπαίδευση", "βίντεο", "νέα μέλη"],
+    downloadCount: 34,
+    isPublic: true
+  }
 ];
 
-const FilesSection: React.FC<FilesSectionProps> = ({ user, getAccessToken }) => {
-  const [files, setFiles] = useState<FileRecord[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
+const categories = [
+  { id: 'all', label: 'Όλα', icon: FolderOpen },
+  { id: 'meetings', label: 'Συνεδριάσεις', icon: FileText },
+  { id: 'documents', label: 'Έγγραφα', icon: File },
+  { id: 'reports', label: 'Αναφορές', icon: FileText },
+  { id: 'images', label: 'Εικόνες', icon: FileImage },
+  { id: 'videos', label: 'Βίντεο', icon: FileVideo },
+  { id: 'general', label: 'Γενικά', icon: Archive }
+];
+
+export function FilesSection({ user, getAccessToken }: FilesSectionProps) {
+  const [files, setFiles] = useState<FileRecord[]>(mockFiles);
+  const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<string>('all');
-  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
+  const [selectedCategory, setSelectedCategory] = useState('all');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
+  const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [newFile, setNewFile] = useState({
-    category: 'general' as NonNullable<FileRecord['category']>,
+    category: 'general' as FileRecord['category'],
     description: '',
     tags: '',
     isPublic: true
   });
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Load files from API
-  useEffect(() => {
-    loadFiles();
-  }, []);
-
-  const loadFiles = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const apiFiles = await fileAPI.getAll();
-      
-      // Convert API files to our format if needed
-      const convertedFiles: FileRecord[] = apiFiles.map((file: ApiFile) => ({
-        ...file,
-        originalName: file.originalName || file.filename,
-        tags: file.tags || [],
-        downloadCount: file.downloadCount || 0,
-        isPublic: file.isPublic !== false,
-        size: file.size || 0,
-        type: file.type || 'application/octet-stream',
-        category: file.category || 'general'
-      }));
-      
-      setFiles(convertedFiles);
-    } catch (err) {
-      console.error('Error loading files:', err);
-      setError('Σφάλμα φόρτωσης αρχείων');
-      // Fallback to empty array on error
-      setFiles([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Helper function for category info
-  const getCategoryInfo = (categoryId: string) => {
-    return categories.find(cat => cat.id === categoryId) || categories[0];
-  };
-
-  // Helper function for file size formatting
-  const formatFileSize = (bytes: number): string => {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  };
-
-  // Helper function for file type icons
-  const getFileTypeIcon = (type: string, category: string) => {
-    const iconClass = "h-12 w-12 mx-auto mb-2";
-    
-    if (type.includes('pdf')) {
-      return <FileText className={`${iconClass} text-red-600`} />;
-    } else if (type.includes('word') || type.includes('document')) {
-      return <FileText className={`${iconClass} text-blue-600`} />;
-    } else if (type.includes('excel') || type.includes('spreadsheet')) {
-      return <FileText className={`${iconClass} text-green-600`} />;
-    } else if (type.includes('image')) {
-      return <ImageIcon className={`${iconClass} text-purple-600`} />;
-    } else if (type.includes('video')) {
-      return <Video className={`${iconClass} text-orange-600`} />;
-    } else if (type.includes('audio')) {
-      return <Music className={`${iconClass} text-pink-600`} />;
-    } else {
-      return <FileText className={`${iconClass} text-gray-600`} />;
-    }
-  };
-
-  // Filtered files
+  // Φίλτρα αρχείων
   const filteredFiles = files.filter(file => {
-    const matchesSearch = file.filename.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         (file.description?.toLowerCase().includes(searchTerm.toLowerCase())) ||
-                         (file.tags && file.tags.some((tag: string) => tag.toLowerCase().includes(searchTerm.toLowerCase())));
+    const matchesSearch = file.originalName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         file.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         file.tags.some(tag => tag.toLowerCase().includes(searchTerm.toLowerCase()));
     
     const matchesCategory = selectedCategory === 'all' || file.category === selectedCategory;
     
     return matchesSearch && matchesCategory;
   });
 
-  // Statistics
-  const stats = {
-    total: files.length,
-    totalSize: files.reduce((acc, file) => acc + (file.size || 0), 0),
-    totalDownloads: files.reduce((acc, file) => acc + (file.downloadCount || 0), 0),
-  };
-
-  // Handle file upload
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
     setUploading(true);
     try {
-      // Use the fileAPI.upload method
-      const uploadedFile = await fileAPI.upload(file, {
-        filename: file.name,
-        description: newFile.description,
+      // Προσομοίωση upload στο API
+      const newFileRecord: FileRecord = {
+        id: files.length + 1,
+        fileName: `file_${Date.now()}_${file.name}`,
+        originalName: file.name,
         category: newFile.category,
-        meeting_id: undefined, // Could be set based on context
-      });
+        uploadedBy: user.name,
+        uploadedAt: new Date().toISOString(),
+        size: file.size,
+        type: file.type,
+        description: newFile.description,
+        tags: newFile.tags.split(',').map(tag => tag.trim()).filter(tag => tag),
+        downloadCount: 0,
+        isPublic: newFile.isPublic
+      };
 
-      // Add the uploaded file to our state
-      setFiles(prev => [uploadedFile, ...prev]);
+      setFiles(prev => [newFileRecord, ...prev]);
       alert('Το αρχείο ανέβηκε επιτυχώς');
       setUploadDialogOpen(false);
       setNewFile({
@@ -165,7 +163,7 @@ const FilesSection: React.FC<FilesSectionProps> = ({ user, getAccessToken }) => 
       });
     } catch (error) {
       console.error('Error uploading file:', error);
-      alert('Σφάλμα ανεβάσματος αρχείου: ' + (error as Error).message);
+      alert('Σφάλμα ανεβάσματος αρχείου');
     } finally {
       setUploading(false);
       if (event.target) {
@@ -174,74 +172,55 @@ const FilesSection: React.FC<FilesSectionProps> = ({ user, getAccessToken }) => 
     }
   };
 
-  const handleDownload = async (file: FileRecord) => {
-    try {
-      const blob = await fileAPI.download(file.id);
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = file.originalName || file.filename;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-      
-      // Update download count (optimistic update)
-      setFiles(prev => prev.map(f => 
-        f.id === file.id 
-          ? { ...f, downloadCount: (f.downloadCount || 0) + 1 }
-          : f
-      ));
-    } catch (error) {
-      console.error('Error downloading file:', error);
-      alert('Σφάλμα λήψης αρχείου: ' + (error as Error).message);
-    }
+  const formatFileSize = (bytes: number) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
-  const handleDelete = async (fileId: number) => {
-    if (!confirm('Είστε σίγουροι ότι θέλετε να διαγράψετε αυτό το αρχείο;')) {
-      return;
-    }
+  const getCategoryInfo = (categoryId: string) => {
+    return categories.find(cat => cat.id === categoryId) || categories[0];
+  };
 
-    try {
-      await fileAPI.delete(fileId);
+  const getFileTypeIcon = (type: string, category: string) => {
+    if (type.startsWith('image/')) return <FileImage className="h-8 w-8 text-green-500" />;
+    if (type.startsWith('video/')) return <FileVideo className="h-8 w-8 text-purple-500" />;
+    if (type.includes('pdf')) return <FileText className="h-8 w-8 text-red-500" />;
+    if (type.includes('word') || type.includes('document')) return <FileText className="h-8 w-8 text-blue-500" />;
+    if (type.includes('sheet') || type.includes('excel')) return <FileText className="h-8 w-8 text-green-600" />;
+    return <File className="h-8 w-8 text-gray-500" />;
+  };
+
+  const handleDownload = (file: FileRecord) => {
+    // Προσομοίωση download - στην πραγματικότητα θα καλούσε το API
+    console.log('Downloading file:', file.fileName);
+    alert(`Λήψη αρχείου: ${file.originalName}`);
+    
+    // Ενημέρωση του download count
+    setFiles(prev => prev.map(f => 
+      f.id === file.id ? { ...f, downloadCount: f.downloadCount + 1 } : f
+    ));
+  };
+
+  const handleDelete = (fileId: number) => {
+    if (confirm('Είστε σίγουροι ότι θέλετε να διαγράψετε αυτό το αρχείο;')) {
       setFiles(prev => prev.filter(f => f.id !== fileId));
       alert('Το αρχείο διαγράφηκε επιτυχώς');
-    } catch (error) {
-      console.error('Error deleting file:', error);
-      alert('Σφάλμα διαγραφής αρχείου: ' + (error as Error).message);
     }
   };
 
-  if (loading) {
-    return (
-      <div className="space-y-6">
-        <div className="flex justify-center items-center py-12">
-          <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
-          <span className="ml-2 text-lg">Φόρτωση αρχείων...</span>
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="space-y-6">
-        <Card>
-          <CardContent className="text-center py-8">
-            <div className="text-red-600 mb-4">
-              <FileText className="h-16 w-16 mx-auto mb-4" />
-              <h3 className="text-lg font-semibold mb-2">Σφάλμα Φόρτωσης</h3>
-              <p>{error}</p>
-            </div>
-            <Button onClick={loadFiles} className="mt-4">
-              Δοκιμή Ξανά
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
+  // Στατιστικά
+  const stats = {
+    total: files.length,
+    totalSize: files.reduce((sum, file) => sum + file.size, 0),
+    byCategory: categories.slice(1).map(cat => ({
+      ...cat,
+      count: files.filter(f => f.category === cat.id).length
+    })),
+    totalDownloads: files.reduce((sum, file) => sum + file.downloadCount, 0)
+  };
 
   return (
     <div className="space-y-6">
@@ -285,7 +264,7 @@ const FilesSection: React.FC<FilesSectionProps> = ({ user, getAccessToken }) => 
                 <select
                   id="category"
                   value={newFile.category}
-                  onChange={(e) => setNewFile({ ...newFile, category: e.target.value as NonNullable<FileRecord['category']> })}
+                  onChange={(e) => setNewFile({ ...newFile, category: e.target.value as FileRecord['category'] })}
                   className="w-full p-2 border rounded-md"
                 >
                   {categories.slice(1).map((category) => (
@@ -341,14 +320,7 @@ const FilesSection: React.FC<FilesSectionProps> = ({ user, getAccessToken }) => 
                   onClick={() => fileInputRef.current?.click()} 
                   disabled={uploading}
                 >
-                  {uploading ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                      Ανέβασμα...
-                    </>
-                  ) : (
-                    'Ανέβασμα'
-                  )}
+                  {uploading ? 'Ανέβασμα...' : 'Ανέβασμα'}
                 </Button>
               </div>
             </div>
@@ -456,10 +428,7 @@ const FilesSection: React.FC<FilesSectionProps> = ({ user, getAccessToken }) => 
               Δεν βρέθηκαν αρχεία
             </h3>
             <p className="text-gray-600">
-              {files.length === 0 
-                ? 'Δεν υπάρχουν αρχεία. Ανεβάστε το πρώτο σας αρχείο!'
-                : 'Δοκιμάστε να αλλάξετε τα κριτήρια αναζήτησης ή τις κατηγορίες.'
-              }
+              Δοκιμάστε να αλλάξετε τα κριτήρια αναζήτησης ή τις κατηγορίες.
             </p>
           </CardContent>
         </Card>
@@ -470,29 +439,29 @@ const FilesSection: React.FC<FilesSectionProps> = ({ user, getAccessToken }) => 
               <CardContent className="p-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-4 flex-1">
-                    {getFileTypeIcon(file.type || '', file.category || '')}
+                    {getFileTypeIcon(file.type, file.category)}
                     <div className="flex-1 min-w-0">
-                      <h3 className="font-medium text-lg">{file.originalName || file.filename}</h3>
+                      <h3 className="font-medium text-lg">{file.originalName}</h3>
                       {file.description && (
                         <p className="text-gray-600 text-sm mt-1">{file.description}</p>
                       )}
                       
                       <div className="flex items-center gap-3 mt-2 text-sm text-gray-500">
                         <Badge variant="secondary">
-                          {getCategoryInfo(file.category || 'general').label}
+                          {getCategoryInfo(file.category).label}
                         </Badge>
-                        <span>{formatFileSize(file.size || 0)}</span>
+                        <span>{formatFileSize(file.size)}</span>
                         <span>•</span>
-                        <span>{new Date(file.uploaded_at).toLocaleDateString('el-GR')}</span>
+                        <span>{new Date(file.uploadedAt).toLocaleDateString('el-GR')}</span>
                         <span>•</span>
                         <div className="flex items-center gap-1">
                           <UserIcon className="h-3 w-3" />
-                          Χρήστης {file.uploaded_by}
+                          {file.uploadedBy}
                         </div>
                         <span>•</span>
                         <div className="flex items-center gap-1">
                           <Download className="h-3 w-3" />
-                          {file.downloadCount || 0} λήψεις
+                          {file.downloadCount} λήψεις
                         </div>
                         {!file.isPublic && (
                           <Badge variant="outline" className="text-xs">
@@ -501,9 +470,9 @@ const FilesSection: React.FC<FilesSectionProps> = ({ user, getAccessToken }) => 
                         )}
                       </div>
 
-                      {file.tags && file.tags.length > 0 && (
+                      {file.tags.length > 0 && (
                         <div className="flex flex-wrap gap-1 mt-2">
-                          {file.tags.map((tag: string, index: number) => (
+                          {file.tags.map((tag, index) => (
                             <Badge key={index} variant="outline" className="text-xs">
                               {tag}
                             </Badge>
@@ -525,12 +494,12 @@ const FilesSection: React.FC<FilesSectionProps> = ({ user, getAccessToken }) => 
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => window.open(file.url, '_blank')}
+                      onClick={() => alert(`Προεπισκόπηση: ${file.originalName}`)}
                       title="Προεπισκόπηση"
                     >
                       <Eye className="h-4 w-4" />
                     </Button>
-                    {(user.role === 'admin' || file.uploaded_by.toString() === user.id?.toString()) && (
+                    {(user.role === 'admin' || file.uploadedBy === user.name) && (
                       <Button
                         variant="outline"
                         size="sm"
@@ -555,15 +524,15 @@ const FilesSection: React.FC<FilesSectionProps> = ({ user, getAccessToken }) => 
               <CardContent className="p-4">
                 <div className="text-center">
                   <div className="mb-3">
-                    {getFileTypeIcon(file.type || '', file.category || '')}
+                    {getFileTypeIcon(file.type, file.category)}
                   </div>
-                  <h3 className="font-medium text-sm mb-2 line-clamp-2">{file.originalName || file.filename}</h3>
+                  <h3 className="font-medium text-sm mb-2 line-clamp-2">{file.originalName}</h3>
                   
                   <div className="text-xs text-gray-500 space-y-1">
-                    <div>{formatFileSize(file.size || 0)}</div>
-                    <div>{new Date(file.uploaded_at).toLocaleDateString('el-GR')}</div>
+                    <div>{formatFileSize(file.size)}</div>
+                    <div>{new Date(file.uploadedAt).toLocaleDateString('el-GR')}</div>
                     <Badge variant="outline" className="text-xs">
-                      {getCategoryInfo(file.category || 'general').label}
+                      {getCategoryInfo(file.category).label}
                     </Badge>
                   </div>
 
@@ -579,12 +548,12 @@ const FilesSection: React.FC<FilesSectionProps> = ({ user, getAccessToken }) => 
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => window.open(file.url, '_blank')}
+                      onClick={() => alert(`Προεπισκόπηση: ${file.originalName}`)}
                       className="flex-1"
                     >
                       <Eye className="h-3 w-3" />
                     </Button>
-                    {(user.role === 'admin' || file.uploaded_by.toString() === user.id?.toString()) && (
+                    {(user.role === 'admin' || file.uploadedBy === user.name) && (
                       <Button
                         variant="outline"
                         size="sm"
@@ -603,6 +572,4 @@ const FilesSection: React.FC<FilesSectionProps> = ({ user, getAccessToken }) => 
       )}
     </div>
   );
-};
-
-export default FilesSection;
+}

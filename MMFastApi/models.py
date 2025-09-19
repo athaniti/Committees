@@ -72,11 +72,20 @@ class File(Base):
     __tablename__ = "files"
     
     id = Column(Integer, primary_key=True, index=True)
-    meeting_id = Column(Integer, ForeignKey("meetings.id"))
+    meeting_id = Column(Integer, ForeignKey("meetings.id"), nullable=True)
     filename = Column(String(255))
+    original_name = Column(String(255), nullable=True)
     url = Column(String(255))
+    file_path = Column(String(500), nullable=True)  # Local file path
     uploaded_by = Column(Integer, ForeignKey("users.id"))
     uploaded_at = Column(DateTime, default=datetime.utcnow)
+    size = Column(Integer, nullable=True)  # File size in bytes
+    file_type = Column(String(100), nullable=True)  # MIME type
+    description = Column(Text, nullable=True)
+    category = Column(String(50), default="general")  # meetings, documents, reports, general, images, videos
+    tags = Column(Text, nullable=True)  # JSON array of tags
+    download_count = Column(Integer, default=0)
+    is_public = Column(Integer, default=1)  # 1 for public, 0 for private
 
 class Vote(Base):
     __tablename__ = "votes"

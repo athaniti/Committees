@@ -81,16 +81,32 @@ class VoteResponse(VoteBase):
 # File schemas
 class FileBase(BaseModel):
     filename: str
-    url: str
+    original_name: Optional[str] = None
+    description: Optional[str] = None
+    category: Optional[str] = "general"
+    tags: Optional[str] = None  # JSON string of tags
+    is_public: Optional[bool] = True
 
 class FileCreate(FileBase):
-    meeting_id: int
+    meeting_id: Optional[int] = None
+
+class FileUpload(BaseModel):
+    meeting_id: Optional[int] = None
+    description: Optional[str] = None
+    category: Optional[str] = "general"
+    tags: Optional[str] = None
+    is_public: Optional[bool] = True
 
 class FileResponse(FileBase):
     id: int
-    meeting_id: int
+    meeting_id: Optional[int] = None
+    url: str
+    file_path: Optional[str] = None
     uploaded_by: int
     uploaded_at: datetime
+    size: Optional[int] = None
+    file_type: Optional[str] = None
+    download_count: Optional[int] = 0
 
     class Config:
         from_attributes = True

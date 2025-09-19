@@ -1,14 +1,21 @@
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, UploadFile, File as FastAPIFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from contextlib import asynccontextmanager
+import os
+import shutil
+import uuid
+import json
+from pathlib import Path
 from database import get_db, engine
 from models import Base, User, Meeting, Committee, Vote, File, Task, Comment, Announcement
 from schemas import (
     UserCreate, UserResponse, MeetingCreate, MeetingResponse,
     CommitteeCreate, CommitteeResponse, VoteCreate, VoteResponse,
-    FileCreate, FileResponse, TaskCreate, TaskResponse,
+    FileCreate, FileResponse, FileUpload, TaskCreate, TaskResponse,
     CommentCreate, CommentResponse, AnnouncementCreate, AnnouncementResponse
 )
 import uvicorn
@@ -28,6 +35,13 @@ async def lifespan(app: FastAPI):
     print("Shutting down FastAPI server...")
 
 app = FastAPI(title="Meetings Management API", version="1.0.0", lifespan=lifespan)
+
+# Create uploads directory if it doesn't exist
+UPLOAD_DIR = Path("uploads")
+UPLOAD_DIR.mkdir(exist_ok=True)
+
+# Mount static files for file serving
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 # CORS middleware for React frontend
 app.add_middleware(
@@ -113,24 +127,107 @@ async def get_votes(db: AsyncSession = Depends(get_db)):
     return votes
 
 # Files endpoints
-@app.post("/files/", response_model=FileResponse)
-async def create_file(file: FileCreate, db: AsyncSession = Depends(get_db)):
-    db_file = File(
-        meeting_id=file.meeting_id,
-        filename=file.filename,
-        url=file.url,
-        uploaded_by=1  # TODO: Get from authentication
-    )
-    db.add(db_file)
-    await db.commit()
-    await db.refresh(db_file)
-    return db_file
+@app.post("/files/upload", response_model=FileResponse)
+async def upload_file(
+    file: UploadFile = FastAPIFile(...),
+    meeting_id: int = None,
+    description: str = None,
+    category: str = "general",
+    tags: str = None,
+    is_public: bool = True,
+    db: AsyncSession = Depends(get_db)
+):
+    try:
+        # Generate unique filename
+        file_extension = Path(file.filename).suffix
+        unique_filename = f"{uuid.uuid4()}{file_extension}"
+        file_path = UPLOAD_DIR / unique_filename
+        
+        # Save file to disk
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        
+        # Get file size
+        file_size = os.path.getsize(file_path)
+        
+        # Create database record
+        db_file = File(
+            filename=unique_filename,
+            original_name=file.filename,
+            url=f"/uploads/{unique_filename}",
+            file_path=str(file_path),
+            uploaded_by=1,  # TODO: Get from authentication
+            size=file_size,
+            file_type=file.content_type,
+            description=description,
+            category=category,
+            tags=tags,
+            download_count=0,
+            is_public=1 if is_public else 0,
+            meeting_id=meeting_id
+        )
+        
+        db.add(db_file)
+        await db.commit()
+        await db.refresh(db_file)
+        
+        return db_file
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"File upload failed: {str(e)}")
 
 @app.get("/files/", response_model=list[FileResponse])
 async def get_files(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(File))
     files = result.scalars().all()
     return files
+
+@app.get("/files/{file_id}", response_model=FileResponse)
+async def get_file(file_id: int, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(File).where(File.id == file_id))
+    file = result.scalar_one_or_none()
+    if not file:
+        raise HTTPException(status_code=404, detail="File not found")
+    return file
+
+@app.get("/files/{file_id}/download")
+async def download_file(file_id: int, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(File).where(File.id == file_id))
+    file = result.scalar_one_or_none()
+    if not file:
+        raise HTTPException(status_code=404, detail="File not found")
+    
+    file_path = Path(file.file_path) if file.file_path else UPLOAD_DIR / file.filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="File not found on disk")
+    
+    # Increment download count
+    file.download_count = (file.download_count or 0) + 1
+    await db.commit()
+    
+    return FileResponse(
+        path=str(file_path),
+        filename=file.original_name or file.filename,
+        media_type=file.file_type or 'application/octet-stream'
+    )
+
+@app.delete("/files/{file_id}")
+async def delete_file(file_id: int, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(File).where(File.id == file_id))
+    file = result.scalar_one_or_none()
+    if not file:
+        raise HTTPException(status_code=404, detail="File not found")
+    
+    # Delete file from disk
+    file_path = Path(file.file_path) if file.file_path else UPLOAD_DIR / file.filename
+    if file_path.exists():
+        os.remove(file_path)
+    
+    # Delete from database
+    await db.execute(delete(File).where(File.id == file_id))
+    await db.commit()
+    
+    return {"message": "File deleted successfully"}
 
 # Tasks endpoints
 @app.post("/tasks/", response_model=TaskResponse)

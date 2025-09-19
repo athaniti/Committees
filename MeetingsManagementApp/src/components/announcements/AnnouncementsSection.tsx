@@ -6,116 +6,117 @@ import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../ui/dialog';
-import { Bell, Plus, MessageSquare } from 'lucide-react';
-import { toast } from 'sonner@2.0.3';
-import { projectId } from '../../utils/supabase/info';
-
-interface User {
-  id: string;
-  email: string;
-  name: string;
-  role: string;
-}
+import { Bell, Plus, MessageSquare, Calendar, User as UserIcon, AlertCircle } from 'lucide-react';
+import { User } from '../../utils/auth';
 
 interface Announcement {
-  id: string;
+  id: number;
   title: string;
   content: string;
-  priority: string;
+  priority: 'low' | 'normal' | 'high';
+  type: 'general' | 'meeting' | 'event' | 'urgent';
   createdBy: string;
   createdAt: string;
-  type: string;
+  isActive: boolean;
 }
 
 interface AnnouncementsSectionProps {
   user: User;
-  getAccessToken: () => Promise<string | undefined>;
 }
 
-export function AnnouncementsSection({ user, getAccessToken }: AnnouncementsSectionProps) {
-  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
-  const [loading, setLoading] = useState(true);
+// Mock data για τις ανακοινώσεις
+const mockAnnouncements: Announcement[] = [
+  {
+    id: 1,
+    title: "Προγραμματισμένη Συντήρηση Συστήματος",
+    content: "Την Κυριακή 22/09/2025 από 02:00 έως 04:00 θα πραγματοποιηθεί προγραμματισμένη συντήρηση του συστήματος. Κατά τη διάρκεια αυτή δεν θα είναι δυνατή η πρόσβαση στην πλατφόρμα.",
+    priority: "high",
+    type: "urgent",
+    createdBy: "Διαχειριστής Συστήματος",
+    createdAt: "2025-09-19T10:30:00Z",
+    isActive: true
+  },
+  {
+    id: 2,
+    title: "Συνεδρίαση Διοικητικού Συμβουλίου",
+    content: "Η επόμενη τακτική συνεδρίαση του Διοικητικού Συμβουλίου θα πραγματοποιηθεί την Τετάρτη 25/09/2025 στις 14:00. Παρακαλούμε όλα τα μέλη να προετοιμάσουν τις εισηγήσεις τους.",
+    priority: "normal",
+    type: "meeting",
+    createdBy: "Γραμματεία",
+    createdAt: "2025-09-18T09:15:00Z",
+    isActive: true
+  },
+  {
+    id: 3,
+    title: "Νέα Έκδοση Κανονισμού Λειτουργίας",
+    content: "Παρακαλούμε όλα τα μέλη να λάβουν γνώση της νέας έκδοσης του Κανονισμού Λειτουργίας που είναι διαθέσιμη στη Βιβλιοθήκη Εγγράφων. Οι αλλαγές αφορούν κυρίως τη διαδικασία ψηφοφορίας.",
+    priority: "normal",
+    type: "general",
+    createdBy: "Νομικό Τμήμα",
+    createdAt: "2025-09-17T16:45:00Z",
+    isActive: true
+  },
+  {
+    id: 4,
+    title: "Εκπαιδευτικό Σεμινάριο",
+    content: "Στις 30/09/2025 θα πραγματοποιηθεί εκπαιδευτικό σεμινάριο για τη χρήση του νέου συστήματος διαχείρισης. Η συμμετοχή είναι προαιρετική αλλά συνιστάται ιδιαίτερα.",
+    priority: "low",
+    type: "event",
+    createdBy: "Εκπαίδευση",
+    createdAt: "2025-09-16T11:20:00Z",
+    isActive: true
+  }
+];
+
+export function AnnouncementsSection({ user }: AnnouncementsSectionProps) {
+  const [announcements, setAnnouncements] = useState<Announcement[]>(mockAnnouncements);
+  const [loading, setLoading] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [selectedPriority, setSelectedPriority] = useState<string>('all');
+  const [selectedType, setSelectedType] = useState<string>('all');
   const [newAnnouncement, setNewAnnouncement] = useState({
     title: '',
     content: '',
-    priority: 'normal',
-    type: 'general'
+    priority: 'normal' as 'low' | 'normal' | 'high',
+    type: 'general' as 'general' | 'meeting' | 'event' | 'urgent'
   });
-
-  useEffect(() => {
-    fetchAnnouncements();
-  }, []);
-
-  const fetchAnnouncements = async () => {
-    try {
-      const token = await getAccessToken();
-      if (!token) return;
-
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-07da4527/announcements`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setAnnouncements(data);
-      } else {
-        toast.error('Σφάλμα φόρτωσης ανακοινώσεων');
-      }
-    } catch (error) {
-      console.error('Error fetching announcements:', error);
-      toast.error('Σφάλμα φόρτωσης ανακοινώσεων');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleCreateAnnouncement = async (e: React.FormEvent) => {
     e.preventDefault();
     
     try {
-      const token = await getAccessToken();
-      if (!token) return;
+      // Προσομοίωση δημιουργίας νέας ανακοίνωσης
+      const newAnnouncementData: Announcement = {
+        id: announcements.length + 1,
+        ...newAnnouncement,
+        createdBy: user.name,
+        createdAt: new Date().toISOString(),
+        isActive: true
+      };
 
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-07da4527/announcements`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(newAnnouncement)
+      setAnnouncements(prev => [newAnnouncementData, ...prev]);
+      console.log('Η ανακοίνωση δημιουργήθηκε επιτυχώς');
+      alert('Η ανακοίνωση δημιουργήθηκε επιτυχώς');
+      setDialogOpen(false);
+      setNewAnnouncement({
+        title: '',
+        content: '',
+        priority: 'normal',
+        type: 'general'
       });
-
-      if (response.ok) {
-        toast.success('Η ανακοίνωση δημιουργήθηκε επιτυχώς');
-        setDialogOpen(false);
-        setNewAnnouncement({
-          title: '',
-          content: '',
-          priority: 'normal',
-          type: 'general'
-        });
-        fetchAnnouncements();
-      } else {
-        const errorData = await response.json();
-        toast.error('Σφάλμα δημιουργίας ανακοίνωσης: ' + errorData.error);
-      }
     } catch (error) {
       console.error('Error creating announcement:', error);
-      toast.error('Σφάλμα δημιουργίας ανακοίνωσης');
+      alert('Σφάλμα δημιουργίας ανακοίνωσης');
     }
   };
 
   const getPriorityColor = (priority: string) => {
     const colors: Record<string, string> = {
-      high: 'bg-red-100 text-red-800',
-      normal: 'bg-blue-100 text-blue-800',
-      low: 'bg-gray-100 text-gray-800'
+      high: 'bg-red-100 text-red-800 border-red-200',
+      normal: 'bg-blue-100 text-blue-800 border-blue-200',
+      low: 'bg-gray-100 text-gray-800 border-gray-200'
     };
-    return colors[priority] || 'bg-gray-100 text-gray-800';
+    return colors[priority] || 'bg-gray-100 text-gray-800 border-gray-200';
   };
 
   const getPriorityLabel = (priority: string) => {
@@ -127,16 +128,61 @@ export function AnnouncementsSection({ user, getAccessToken }: AnnouncementsSect
     return labels[priority] || priority;
   };
 
-  if (loading) {
-    return <div className="text-center py-8">Φόρτωση ανακοινώσεων...</div>;
-  }
+  const getTypeLabel = (type: string) => {
+    const labels: Record<string, string> = {
+      general: 'Γενική',
+      meeting: 'Συνεδρίαση',
+      event: 'Εκδήλωση',
+      urgent: 'Επείγουσα'
+    };
+    return labels[type] || type;
+  };
+
+  const getTypeIcon = (type: string) => {
+    switch (type) {
+      case 'meeting':
+        return <MessageSquare className="h-4 w-4" />;
+      case 'event':
+        return <Calendar className="h-4 w-4" />;
+      case 'urgent':
+        return <AlertCircle className="h-4 w-4" />;
+      default:
+        return <Bell className="h-4 w-4" />;
+    }
+  };
+
+  // Φίλτρα για τις ανακοινώσεις
+  const filteredAnnouncements = announcements.filter(announcement => {
+    const matchesPriority = selectedPriority === 'all' || announcement.priority === selectedPriority;
+    const matchesType = selectedType === 'all' || announcement.type === selectedType;
+    return matchesPriority && matchesType;
+  });
+
+  // Στατιστικά
+  const stats = {
+    total: announcements.length,
+    high: announcements.filter(a => a.priority === 'high').length,
+    urgent: announcements.filter(a => a.type === 'urgent').length,
+    recent: announcements.filter(a => {
+      const created = new Date(a.createdAt);
+      const weekAgo = new Date();
+      weekAgo.setDate(weekAgo.getDate() - 7);
+      return created > weekAgo;
+    }).length
+  };
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      {/* Header Section */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h2 className="text-2xl font-semibold">Ανακοινώσεις</h2>
-          <p className="text-gray-600">Επίσημες ανακοινώσεις και ενημερώσεις</p>
+          <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+            <Bell className="h-6 w-6 text-blue-600" />
+            Ανακοινώσεις
+          </h2>
+          <p className="text-gray-600 mt-1">
+            Επίσημες ανακοινώσεις και ενημερώσεις του οργανισμού
+          </p>
         </div>
         {(user.role === 'admin' || user.role === 'secretary') && (
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -180,7 +226,7 @@ export function AnnouncementsSection({ user, getAccessToken }: AnnouncementsSect
                     <select
                       id="priority"
                       value={newAnnouncement.priority}
-                      onChange={(e) => setNewAnnouncement({ ...newAnnouncement, priority: e.target.value })}
+                      onChange={(e) => setNewAnnouncement({ ...newAnnouncement, priority: e.target.value as any })}
                       className="w-full p-2 border rounded-md"
                     >
                       <option value="low">Χαμηλή</option>
@@ -193,7 +239,7 @@ export function AnnouncementsSection({ user, getAccessToken }: AnnouncementsSect
                     <select
                       id="type"
                       value={newAnnouncement.type}
-                      onChange={(e) => setNewAnnouncement({ ...newAnnouncement, type: e.target.value })}
+                      onChange={(e) => setNewAnnouncement({ ...newAnnouncement, type: e.target.value as any })}
                       className="w-full p-2 border rounded-md"
                     >
                       <option value="general">Γενική</option>
@@ -216,42 +262,124 @@ export function AnnouncementsSection({ user, getAccessToken }: AnnouncementsSect
         )}
       </div>
 
+      {/* Statistics */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Card>
+          <CardContent className="p-4 text-center">
+            <div className="text-2xl font-bold text-blue-600">{stats.total}</div>
+            <div className="text-sm text-gray-600">Συνολικές Ανακοινώσεις</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4 text-center">
+            <div className="text-2xl font-bold text-red-600">{stats.high}</div>
+            <div className="text-sm text-gray-600">Υψηλής Προτεραιότητας</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4 text-center">
+            <div className="text-2xl font-bold text-orange-600">{stats.urgent}</div>
+            <div className="text-sm text-gray-600">Επείγουσες</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4 text-center">
+            <div className="text-2xl font-bold text-green-600">{stats.recent}</div>
+            <div className="text-sm text-gray-600">Τελευταία Εβδομάδα</div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Filters */}
+      <Card>
+        <CardContent className="p-4">
+          <div className="flex flex-col sm:flex-row gap-4">
+            <div className="flex-1">
+              <Label htmlFor="priority-filter">Φίλτρο Προτεραιότητας</Label>
+              <select
+                id="priority-filter"
+                value={selectedPriority}
+                onChange={(e) => setSelectedPriority(e.target.value)}
+                className="w-full p-2 border rounded-md"
+              >
+                <option value="all">Όλες οι προτεραιότητες</option>
+                <option value="high">Υψηλή</option>
+                <option value="normal">Κανονική</option>
+                <option value="low">Χαμηλή</option>
+              </select>
+            </div>
+            <div className="flex-1">
+              <Label htmlFor="type-filter">Φίλτρο Κατηγορίας</Label>
+              <select
+                id="type-filter"
+                value={selectedType}
+                onChange={(e) => setSelectedType(e.target.value)}
+                className="w-full p-2 border rounded-md"
+              >
+                <option value="all">Όλες οι κατηγορίες</option>
+                <option value="general">Γενική</option>
+                <option value="meeting">Συνεδρίαση</option>
+                <option value="event">Εκδήλωση</option>
+                <option value="urgent">Επείγουσα</option>
+              </select>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Announcements List */}
       <div className="space-y-4">
-        {announcements.length === 0 ? (
+        {filteredAnnouncements.length === 0 ? (
           <Card>
             <CardContent className="text-center py-8">
-              <Bell className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-              <p className="text-gray-500">Δεν υπάρχουν ανακοινώσεις</p>
+              <Bell className="h-16 w-16 text-gray-400 mx-auto mb-4" />
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                Δεν βρέθηκαν ανακοινώσεις
+              </h3>
+              <p className="text-gray-600">
+                Δεν υπάρχουν ανακοινώσεις που να ταιριάζουν με τα κριτήρια φιλτραρίσματος.
+              </p>
             </CardContent>
           </Card>
         ) : (
-          announcements.map((announcement) => (
-            <Card key={announcement.id} className="hover:shadow-md transition-shadow">
+          filteredAnnouncements.map((announcement) => (
+            <Card key={announcement.id} className={`hover:shadow-lg transition-shadow ${
+              announcement.priority === 'high' ? 'border-l-4 border-l-red-500' : ''
+            }`}>
               <CardHeader>
                 <div className="flex justify-between items-start">
                   <div className="flex-1">
-                    <CardTitle className="text-xl mb-2">{announcement.title}</CardTitle>
-                    <div className="flex gap-2">
+                    <div className="flex items-center gap-2 mb-2">
+                      {getTypeIcon(announcement.type)}
+                      <CardTitle className="text-xl">{announcement.title}</CardTitle>
+                    </div>
+                    <div className="flex gap-2 flex-wrap">
                       <Badge className={getPriorityColor(announcement.priority)}>
                         {getPriorityLabel(announcement.priority)}
                       </Badge>
-                      <Badge variant="outline">{announcement.type}</Badge>
+                      <Badge variant="outline">{getTypeLabel(announcement.type)}</Badge>
                     </div>
                   </div>
-                  <div className="text-sm text-gray-500">
-                    {new Date(announcement.createdAt).toLocaleDateString('el-GR', {
-                      year: 'numeric',
-                      month: 'long',
-                      day: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit'
-                    })}
+                  <div className="text-right">
+                    <div className="text-sm text-gray-500">
+                      {new Date(announcement.createdAt).toLocaleDateString('el-GR', {
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric'
+                      })}
+                    </div>
+                    <div className="text-xs text-gray-400 flex items-center gap-1 mt-1">
+                      <UserIcon className="h-3 w-3" />
+                      {announcement.createdBy}
+                    </div>
                   </div>
                 </div>
               </CardHeader>
               <CardContent>
                 <div className="prose max-w-none">
-                  <p className="text-gray-700 whitespace-pre-wrap">{announcement.content}</p>
+                  <p className="text-gray-700 whitespace-pre-wrap leading-relaxed">
+                    {announcement.content}
+                  </p>
                 </div>
               </CardContent>
             </Card>

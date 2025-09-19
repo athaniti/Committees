@@ -81,7 +81,59 @@ export const fileAPI = {
       body: JSON.stringify(fileData),
     }),
 
-  getAll: () => apiRequest('/files/'),
+  getAll: () => apiRequest<File[]>('/files/'),
+
+  getById: (id: number) => apiRequest<File>(`/files/${id}`),
+
+  delete: (id: number) => 
+    apiRequest(`/files/${id}`, {
+      method: 'DELETE',
+    }),
+
+  // Upload file function (would need backend endpoint for file upload)
+  upload: async (file: Blob, metadata: {
+    filename: string;
+    meeting_id?: number;
+    description?: string;
+    category?: string;
+  }): Promise<File> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('filename', metadata.filename);
+    if (metadata.meeting_id) {
+      formData.append('meeting_id', metadata.meeting_id.toString());
+    }
+    if (metadata.description) {
+      formData.append('description', metadata.description);
+    }
+    if (metadata.category) {
+      formData.append('category', metadata.category);
+    }
+
+    const response = await fetch(`${API_BASE_URL}/files/upload`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Upload Error: ${response.status} - ${errorText}`);
+    }
+
+    return response.json();
+  },
+
+  // Download file (returns blob)
+  download: async (id: number): Promise<Blob> => {
+    const response = await fetch(`${API_BASE_URL}/files/${id}/download`);
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Download Error: ${response.status} - ${errorText}`);
+    }
+
+    return response.blob();
+  },
 };
 
 // Task-related API calls
@@ -200,11 +252,19 @@ export interface Vote {
 
 export interface File {
   id: number;
-  meeting_id: number;
+  meeting_id?: number;
   filename: string;
+  originalName?: string;
   url: string;
   uploaded_by: number;
   uploaded_at: string;
+  size?: number;
+  type?: string;
+  description?: string;
+  category?: 'meetings' | 'documents' | 'reports' | 'general' | 'images' | 'videos';
+  tags?: string[];
+  downloadCount?: number;
+  isPublic?: boolean;
 }
 
 export interface Task {
